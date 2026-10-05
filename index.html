@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="sr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Čitaonica</title>
+<meta name="theme-color" content="#0f1012">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Noto+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+body{margin:0}
+img{max-width:100%}
+/* Layout: jedna beskrajna kolona teksta; kontrole lebde iznad i sklanjaju se dok čitaš.
+   Sve boje interfejsa izvode se iz dve boje koje bira čitalac (--bg, --fg). */
+:root{
+  --bg:#0f1012;
+  --fg:#b8b2a6;
+  --muted:color-mix(in srgb,var(--fg) 58%,var(--bg));
+  --line:color-mix(in srgb,var(--fg) 16%,var(--bg));
+  --panel:color-mix(in srgb,var(--fg) 7%,var(--bg));
+  --hover:color-mix(in srgb,var(--fg) 12%,var(--bg));
+  --fs:20px; --lh:1.65; --mx:22px; --col:38em; --dim:0;
+  --font:'Literata',Georgia,serif;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html{scroll-behavior:auto}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);-webkit-tap-highlight-color:transparent}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+
+/* ---------- tekst knjige ---------- */
+#book{max-width:var(--col);margin:0 auto;padding:76px var(--mx) 45vh;font-family:var(--font);font-size:var(--fs);line-height:var(--lh);overflow-wrap:break-word;-webkit-hyphens:auto;hyphens:auto}
+#book.justify{text-align:justify}
+#book p{margin:0 0 .85em}
+#book h1,#book h2,#book h3,#book h4{font-weight:600;line-height:1.25;text-wrap:balance;margin:1.4em 0 .7em;text-align:left;-webkit-hyphens:manual;hyphens:manual}
+#book h1{font-size:1.5em}#book h2{font-size:1.3em}#book h3{font-size:1.12em}#book h4{font-size:1em}
+#book a{color:inherit;text-decoration-color:var(--muted);text-underline-offset:.15em}
+#book img,#book svg{max-width:100%;height:auto}
+#book img{display:block;margin:1em auto}
+#book blockquote{margin:1em 0 1em 1.2em;padding-left:.9em;border-left:2px solid var(--line)}
+#book hr{border:0;border-top:1px solid var(--line);margin:2em 20%}
+#book table{display:block;overflow-x:auto;max-width:100%;border-collapse:collapse}
+#book td,#book th{border:1px solid var(--line);padding:.3em .5em}
+#book pre{white-space:pre-wrap}
+#book sup{line-height:0}
+#book .chapter+.chapter{margin-top:3em;padding-top:2.5em;border-top:1px solid var(--line)}
+#book .note{font-size:.85em;color:var(--muted)}
+#book .flash{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:var(--hover)}to{background:transparent}}
+
+/* ---------- trake ---------- */
+.bar{position:fixed;left:0;right:0;z-index:20;background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:transform .25s ease}
+#top{top:0;padding-top:env(safe-area-inset-top,0px);border-bottom:1px solid var(--line)}
+#bottom{bottom:0;padding-bottom:env(safe-area-inset-bottom,0px);border-top:1px solid var(--line)}
+body.immersive #top{transform:translateY(-100%)}
+body.immersive #bottom{transform:translateY(100%)}
+.bar-in{display:flex;align-items:center;gap:4px;max-width:960px;margin:0 auto;padding:6px 10px;min-height:48px}
+#top .title{flex:1;min-width:0;text-align:center;font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:6px}
+.icon{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:40px;padding:0 10px;border:0;border-radius:8px;background:transparent;font-size:14px}
+.icon:hover{background:var(--hover)}
+.icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.icon .aa{font-family:var(--font);font-size:18px;letter-spacing:.02em}
+#bottom .bar-in{flex-direction:column;align-items:stretch;gap:6px;padding:8px 16px 10px}
+.meta{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta.sub{font-size:11.5px}
+#chPage{flex:none;color:var(--fg)}
+.meta span:first-child{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+.track i{display:block;height:100%;width:0;background:var(--fg);opacity:.75}
+.lbl-hide{display:none}
+@media (min-width:560px){.lbl-hide{display:inline}}
+
+/* ---------- donji paneli ---------- */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:40;margin:0 auto;max-width:560px;max-height:62vh;overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;padding:6px 20px calc(20px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.35)}
+#toc.sheet{max-height:75vh}
+.sheet-head{position:sticky;top:-6px;display:flex;align-items:center;justify-content:space-between;padding:12px 0 10px;background:var(--panel);z-index:1}
+.sheet h2{margin:0;font-size:16px;font-weight:600}
+.close{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 12px;font-size:13px}
+.group{display:grid;gap:8px;padding:12px 0;border-top:1px solid var(--line)}
+.label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);letter-spacing:.02em}
+.label output{font-variant-numeric:tabular-nums;color:var(--fg)}
+input[type=range]{width:100%;accent-color:var(--fg);height:28px}
+.themes{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.swatch{display:grid;gap:4px;justify-items:center;border:0;background:transparent;padding:0;font-size:11.5px;color:var(--muted)}
+.swatch b{display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1.15;max-width:72px;border-radius:10px;font:400 20px/1 'Literata',Georgia,serif;border:1px solid var(--line)}
+.swatch[aria-pressed=true] b{outline:2px solid var(--fg);outline-offset:2px}
+.colors{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.color{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 6px 6px 12px;font-size:13.5px}
+.color input{width:44px;height:32px;border:0;padding:0;background:transparent;border-radius:6px;cursor:pointer}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{flex:1 1 auto;border:1px solid var(--line);background:transparent;border-radius:8px;padding:8px 10px;font-size:13.5px;white-space:nowrap}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.reset{margin-top:6px;width:100%;border:1px dashed var(--line);background:transparent;border-radius:8px;padding:10px;font-size:13px;color:var(--muted)}
+#tocList{list-style:none;margin:0;padding:0 0 8px}
+#tocList button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:10px 8px;border-radius:8px;font-size:15px;line-height:1.35}
+#tocList button:hover{background:var(--hover)}
+#tocList button.cur{font-weight:600}
+#tocList .d1{padding-left:24px;font-size:14px;color:var(--muted)}
+#tocList .d2{padding-left:40px;font-size:13.5px;color:var(--muted)}
+.scrim{position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.25)}
+#dimmer{position:fixed;inset:0;z-index:100;background:#000;opacity:var(--dim);pointer-events:none}
+
+/* ---------- biblioteka ---------- */
+#library{position:fixed;inset:0;z-index:30;overflow-y:auto;background:var(--bg);padding:calc(env(safe-area-inset-top,0px) + 8px) 16px calc(env(safe-area-inset-bottom,0px) + 32px)}
+.lib{max-width:720px;margin:0 auto}
+.lib-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0 20px}
+.lib-head h1{margin:0;font:600 26px/1.1 'Literata',Georgia,serif;letter-spacing:-.01em}
+.add{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:10px;padding:10px 16px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:600}
+.add svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+.drop{border:1.5px dashed var(--line);border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-size:13.5px;margin-bottom:20px}
+body.dragging .drop{border-color:var(--fg);color:var(--fg)}
+.books{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.book{display:flex;align-items:center;gap:14px;padding:12px 10px;border-radius:10px}
+.book:hover{background:var(--panel)}
+.book .spine{flex:none;width:38px;height:54px;border-radius:3px 5px 5px 3px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;font:600 13px/1 'Literata',Georgia,serif;color:var(--bg);background:var(--fg);opacity:.85}
+.book .open{flex:1;min-width:0;display:grid;gap:3px;text-align:left;border:0;background:transparent;padding:0}
+.book .t{font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book .a{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book .p{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.book .p .track{flex:1;max-width:160px}
+.book .rm{flex:none;border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 10px;font-size:12.5px;color:var(--muted)}
+.book .rm:hover{border-color:var(--line)}
+.book .rm.armed{border-color:var(--fg);color:var(--fg)}
+.sec-h{margin:26px 0 8px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.drive{border:1px solid var(--line);border-radius:12px;padding:6px 8px 8px;margin-bottom:8px}
+.drive-head{display:flex;align-items:center;gap:8px;padding:8px 6px}
+.drive-head h2{flex:1;margin:0;font-size:15px;font-weight:600}
+.ghost{border:1px solid var(--line);background:transparent;border-radius:8px;padding:7px 12px;font-size:13px}
+.ghost:hover{background:var(--hover)}
+.ghost.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:600}
+.drive-msg{margin:0;padding:4px 6px 8px;font-size:13px;color:var(--muted);line-height:1.5}
+.drive-msg:empty{display:none}
+.book .tag{flex:none;font-size:12px;color:var(--muted);padding:0 6px}
+.lib-foot{margin-top:28px;font-size:12.5px;color:var(--muted);line-height:1.55;max-width:60ch}
+
+#loading{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bg) 85%,transparent);font-size:14px;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:70;max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13.5px;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+@media (prefers-reduced-motion:reduce){.bar{transition:none}#book .flash{animation:none}}
+</style>
+
+</head>
+<body>
+<header class="bar" id="top">
+  <div class="bar-in">
+    <button class="icon" id="btnLib" aria-label="Biblioteka">
+      <svg viewBox="0 0 24 24"><path d="M4 19V5M9 19V5M14 19l-1-14M18.5 19l-3-13.5"/></svg><span class="lbl-hide">Biblioteka</span>
+    </button>
+    <div class="title" id="bookTitle"></div>
+    <button class="icon" id="btnToc" aria-label="Sadržaj">
+      <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+    </button>
+    <button class="icon" id="btnSet" aria-label="Podešavanja prikaza"><span class="aa">Aa</span></button>
+  </div>
+</header>
+
+<main id="book" lang="sr"></main>
+
+<footer class="bar" id="bottom">
+  <div class="bar-in">
+    <div class="meta"><span id="chap"></span><span id="chPage"></span></div>
+    <div class="track"><i id="prog"></i></div>
+    <div class="meta sub"><span id="bkPage"></span><span id="pct">0%</span></div>
+  </div>
+</footer>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<section class="sheet" id="settings" hidden aria-label="Podešavanja prikaza">
+  <div class="sheet-head"><h2>Prikaz</h2><button class="close" data-close>Gotovo</button></div>
+  <div class="group" style="border-top:0">
+    <div class="label">Tema</div>
+    <div class="themes" id="themes"></div>
+  </div>
+  <div class="group">
+    <div class="label">Svoje boje</div>
+    <div class="colors">
+      <label class="color" for="cBg"><span>Pozadina</span><input type="color" id="cBg"></label>
+      <label class="color" for="cFg"><span>Slova</span><input type="color" id="cFg"></label>
+    </div>
+  </div>
+  <div class="group">
+    <label class="label" for="sFs">Veličina slova <output id="oFs"></output></label>
+    <input type="range" id="sFs" min="14" max="34" step="1">
+  </div>
+  <div class="group">
+    <label class="label" for="sLh">Prored <output id="oLh"></output></label>
+    <input type="range" id="sLh" min="1.2" max="2.3" step="0.05">
+  </div>
+  <div class="group">
+    <label class="label" for="sMx">Bočne margine <output id="oMx"></output></label>
+    <input type="range" id="sMx" min="16" max="64" step="2">
+  </div>
+  <div class="group">
+    <label class="label" for="sCol">Širina kolone (veći ekrani) <output id="oCol"></output></label>
+    <input type="range" id="sCol" min="24" max="60" step="1">
+  </div>
+  <div class="group">
+    <div class="label">Font</div>
+    <div class="seg" id="fonts"></div>
+  </div>
+  <div class="group">
+    <div class="label">Poravnanje</div>
+    <div class="seg" id="aligns">
+      <button data-align="left">Levo</button><button data-align="justify">Obostrano</button>
+    </div>
+  </div>
+  <div class="group">
+    <label class="label" for="sDim">Zatamnjenje ekrana <output id="oDim"></output></label>
+    <input type="range" id="sDim" min="0" max="70" step="5">
+  </div>
+  <button class="reset" id="reset">Vrati podrazumevana podešavanja</button>
+</section>
+
+<section class="sheet" id="toc" hidden aria-label="Sadržaj">
+  <div class="sheet-head"><h2>Sadržaj</h2><button class="close" data-close>Zatvori</button></div>
+  <ul id="tocList"></ul>
+</section>
+
+<section id="library" hidden>
+  <div class="lib">
+    <div class="lib-head">
+      <h1>Čitaonica</h1>
+      <label class="add" for="file"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Dodaj EPUB</label>
+      <input type="file" id="file" accept=".epub,application/epub+zip" multiple hidden>
+    </div>
+    <section class="drive" id="drive">
+      <div class="drive-head">
+        <h2>Google Drive</h2>
+        <button class="ghost" id="driveOut" hidden>Odjavi</button>
+        <button class="ghost primary" id="driveBtn">Poveži</button>
+      </div>
+      <p class="drive-msg" id="driveMsg">Poveži nalog i ovde će se pojaviti svi EPUB fajlovi sa tvog Drive-a.</p>
+      <ul class="books" id="driveList"></ul>
+    </section>
+    <h2 class="sec-h">Na ovom uređaju</h2>
+    <div class="drop">Prevuci .epub fajl ovde ili klikni „Dodaj EPUB”</div>
+    <ul class="books" id="books"></ul>
+    <p class="lib-foot">Knjige otvorene sa Drive-a čuvaju se i na uređaju, pa mogu da se čitaju i bez interneta. Sinhronizacija pozicije između telefona i računara stiže u sledećoj fazi.</p>
+  </div>
+</section>
+
+<div id="loading" hidden>Učitavam knjigu…</div>
+<div id="toast" hidden></div>
+<div id="dimmer"></div>
+
+<script src="config.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const book = $('#book');
+
+/* ---------- skladište ---------- */
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+let dbp = null;
+function db() {
+  if (dbp) return dbp;
+  dbp = new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('citaonica', 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore('meta', { keyPath: 'id' }); r.result.createObjectStore('files'); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  });
+  return dbp;
+}
+async function tx(store, mode, fn) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const t = d.transaction(store, mode); const s = t.objectStore(store);
+    const r = fn(s); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error);
+  });
+}
+const dbAllMeta = () => tx('meta', 'readonly', s => s.getAll()).catch(() => []);
+const dbGetFile = id => tx('files', 'readonly', s => s.get(id));
+async function dbSave(meta, buf) { await tx('meta', 'readwrite', s => s.put(meta)); await tx('files', 'readwrite', s => s.put(buf, meta.id)); }
+async function dbDelete(id) { await tx('meta', 'readwrite', s => s.delete(id)); await tx('files', 'readwrite', s => s.delete(id)); }
+
+/* ---------- podešavanja ---------- */
+const THEMES = {
+  noc:    { name: 'Noć',    bg: '#0f1012', fg: '#b8b2a6' },
+  crna:   { name: 'Crna',   bg: '#000000', fg: '#8e99a4' },
+  jantar: { name: 'Jantar', bg: '#15120d', fg: '#cfa45a' },
+  sepija: { name: 'Sepija', bg: '#f1e7d2', fg: '#4a3b2a' },
+  dan:    { name: 'Dan',    bg: '#fbfaf7', fg: '#22211f' }
+};
+const FONTS = {
+  literata: { name: 'Literata', css: "'Literata',Georgia,serif" },
+  pt:       { name: 'PT Serif', css: "'PT Serif',Georgia,serif" },
+  merri:    { name: 'Merriweather', css: "'Merriweather',Georgia,serif" },
+  noto:     { name: 'Noto Sans', css: "'Noto Sans',system-ui,sans-serif" },
+  sys:      { name: 'Sistemski', css: "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" }
+};
+const DEF = { theme: 'noc', bg: '#0f1012', fg: '#b8b2a6', fs: 20, lh: 1.65, mx: 22, col: 38, font: 'literata', align: 'left', dim: 0 };
+let S = Object.assign({}, DEF, ls.get('settings', {}));
+if (!FONTS[S.font]) S.font = DEF.font;
+
+function lum(hex) {
+  const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); });
+  return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+}
+
+function applySettings(keep) {
+  const pos = keep && current ? getPos() : null;
+  const r = document.documentElement;
+  r.style.setProperty('--bg', S.bg); r.style.setProperty('--fg', S.fg);
+  r.style.setProperty('--fs', S.fs + 'px'); r.style.setProperty('--lh', S.lh);
+  r.style.setProperty('--mx', S.mx + 'px'); r.style.setProperty('--col', S.col + 'em');
+  r.style.setProperty('--font', FONTS[S.font].css); r.style.setProperty('--dim', S.dim / 100);
+  r.style.colorScheme = lum(S.bg) < .3 ? 'dark' : 'light';
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = S.bg;
+  book.classList.toggle('justify', S.align === 'justify');
+  ls.set('settings', S);
+  syncControls();
+  if (pos) restorePos(pos);
+}
+
+function syncControls() {
+  $('#themes').querySelectorAll('.swatch').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === S.theme));
+  $('#cBg').value = S.bg; $('#cFg').value = S.fg;
+  [['Fs', 'fs', v => v + ' px'], ['Lh', 'lh', v => (+v).toFixed(2)], ['Mx', 'mx', v => v + ' px'], ['Col', 'col', v => v + ' em'], ['Dim', 'dim', v => v + '%']]
+    .forEach(([id, k, f]) => { $('#s' + id).value = S[k]; $('#o' + id).textContent = f(S[k]); });
+  $('#fonts').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.font === S.font));
+  $('#aligns').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.align === S.align));
+}
+
+function buildControls() {
+  $('#themes').innerHTML = Object.entries(THEMES).map(([k, t]) =>
+    `<button class="swatch" data-t="${k}"><b style="background:${t.bg};color:${t.fg}">Aa</b>${t.name}</button>`).join('');
+  $('#themes').addEventListener('click', e => {
+    const b = e.target.closest('.swatch'); if (!b) return;
+    const t = THEMES[b.dataset.t]; S.theme = b.dataset.t; S.bg = t.bg; S.fg = t.fg; applySettings(false);
+  });
+  $('#cBg').addEventListener('input', e => { S.bg = e.target.value; S.theme = 'svoja'; applySettings(false); });
+  $('#cFg').addEventListener('input', e => { S.fg = e.target.value; S.theme = 'svoja'; applySettings(false); });
+  [['Fs', 'fs', true], ['Lh', 'lh', true], ['Mx', 'mx', true], ['Col', 'col', true], ['Dim', 'dim', false]].forEach(([id, k, keep]) => {
+    $('#s' + id).addEventListener('input', e => { S[k] = +e.target.value; applySettings(keep); });
+  });
+  $('#fonts').innerHTML = Object.entries(FONTS).map(([k, f]) => `<button data-font="${k}" style="font-family:${f.css.replace(/"/g, '&quot;')}">${f.name}</button>`).join('');
+  $('#fonts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.font = b.dataset.font; applySettings(true); } });
+  $('#aligns').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.align = b.dataset.align; applySettings(true); } });
+  $('#reset').addEventListener('click', () => { S = Object.assign({}, DEF); applySettings(true); });
+}
+
+/* ---------- pomoćne ---------- */
+function toast(msg, ms = 3200) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
+function resolve(from, href) {
+  try { return decodeURIComponent(new URL(href, 'http://e/' + from).pathname.slice(1)); } catch (e) { return href; }
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp' };
+const XLINK = 'http://www.w3.org/1999/xlink';
+
+/* ---------- EPUB ---------- */
+async function parseEpub(buf) {
+  if (typeof JSZip === 'undefined') throw new Error('Biblioteka za raspakivanje nije učitana. Proveri internet vezu.');
+  const zip = await JSZip.loadAsync(buf);
+  const file = p => zip.file(p) || zip.file(encodeURI(p));
+  const text = async p => { const f = file(p); if (!f) throw new Error('U knjizi nedostaje deo: ' + p); return f.async('text'); };
+  const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+  const byTag = (d, t) => [...d.getElementsByTagNameNS('*', t)];
+
+  const enc = file('META-INF/encryption.xml');
+  if (enc) {
+    const refs = byTag(xml(await enc.async('text')), 'CipherReference').map(r => r.getAttribute('URI') || '');
+    if (refs.some(u => /\.(x?html?|xml)$/i.test(u))) throw new Error('Ova knjiga je zaštićena (DRM) i ne može da se otvori.');
+  }
+  const cont = xml(await text('META-INF/container.xml'));
+  const rf = byTag(cont, 'rootfile')[0]; if (!rf) throw new Error('Ovo ne liči na ispravan EPUB fajl.');
+  const opfPath = rf.getAttribute('full-path');
+  const opf = xml(await text(opfPath));
+  const meta = n => { const e = byTag(opf, n)[0]; return e ? e.textContent.trim() : ''; };
+  const manifest = {};
+  byTag(opf, 'item').forEach(it => manifest[it.getAttribute('id')] = {
+    href: resolve(opfPath, it.getAttribute('href')), type: it.getAttribute('media-type') || '', props: it.getAttribute('properties') || ''
+  });
+  const spineEl = byTag(opf, 'spine')[0];
+  const spine = byTag(opf, 'itemref').filter(r => r.getAttribute('linear') !== 'no').map(r => manifest[r.getAttribute('idref')]).filter(Boolean);
+  if (!spine.length) throw new Error('Knjiga nema sadržaj koji može da se prikaže.');
+
+  // sadržaj (EPUB3 nav ili EPUB2 ncx)
+  let toc = [];
+  try {
+    const nav = Object.values(manifest).find(m => m.props.split(' ').includes('nav'));
+    const ncxId = spineEl && spineEl.getAttribute('toc');
+    const ncx = (ncxId && manifest[ncxId]) || Object.values(manifest).find(m => m.type === 'application/x-dtbncx+xml');
+    if (nav) {
+      const d = xml(await text(nav.href));
+      const navs = byTag(d, 'nav');
+      const tn = navs.find(n => (n.getAttribute('epub:type') || n.getAttributeNS('http://www.idpf.org/2007/ops', 'type') || '').includes('toc')) || navs[0];
+      if (tn) byTag(tn, 'a').forEach(a => {
+        let depth = 0, p = a.parentNode; while (p && p !== tn) { if (p.localName === 'ol') depth++; p = p.parentNode; }
+        if (a.getAttribute('href')) toc.push({ label: a.textContent.replace(/\s+/g, ' ').trim(), href: resolve(nav.href, a.getAttribute('href')), depth: Math.max(0, depth - 1) });
+      });
+    }
+    if (!toc.length && ncx) {
+      const d = xml(await text(ncx.href));
+      byTag(d, 'navPoint').forEach(np => {
+        let depth = 0, p = np.parentNode; while (p && p.localName === 'navPoint') { depth++; p = p.parentNode; }
+        const lab = byTag(np, 'text')[0], c = byTag(np, 'content')[0];
+        if (c) toc.push({ label: lab ? lab.textContent.trim() : '', href: resolve(ncx.href, c.getAttribute('src')), depth });
+      });
+    }
+  } catch (e) { toc = []; }
+
+  const chapters = [];
+  for (let i = 0; i < spine.length; i++) {
+    setLoading(`Učitavam knjigu… ${Math.round(i / spine.length * 100)}%`);
+    const src = await text(spine[i].href);
+    let d = new DOMParser().parseFromString(src, 'application/xhtml+xml');
+    if (d.getElementsByTagName('parsererror').length) d = new DOMParser().parseFromString(src, 'text/html');
+    const body = d.body || d.getElementsByTagName('body')[0];
+    // slike u data: URI
+    const imgs = [...body.querySelectorAll('img[src], image')];
+    for (const im of imgs) {
+      const attr = im.localName === 'img' ? 'src' : (im.getAttributeNS(XLINK, 'href') ? 'xlink' : 'href');
+      const val = attr === 'xlink' ? im.getAttributeNS(XLINK, 'href') : im.getAttribute(attr);
+      if (!val || /^(data:|https?:)/.test(val)) continue;
+      const p = resolve(spine[i].href, val), f = file(p);
+      if (!f) continue;
+      const uri = `data:${MIME[(p.split('.').pop() || '').toLowerCase()] || 'image/jpeg'};base64,` + await f.async('base64');
+      if (attr === 'xlink') im.setAttributeNS(XLINK, 'xlink:href', uri); else im.setAttribute(attr, uri);
+    }
+    chapters.push({ path: spine[i].href, body });
+  }
+  return { title: meta('title') || 'Bez naslova', author: meta('creator'), lang: meta('language') || 'sr', chapters, toc };
+}
+
+const DROP_TAGS = 'script,style,link,meta,iframe,object,embed,form,input,button,textarea,select,base';
+function renderChapters(chs) {
+  const index = {}; chs.forEach((c, i) => index[c.path] = i);
+  const frag = document.createDocumentFragment();
+  chs.forEach((c, i) => {
+    const sec = document.createElement('section');
+    sec.className = 'chapter'; sec.id = 'ch-' + i; sec.dataset.i = i;
+    const body = document.importNode(c.body, true);
+    body.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
+    body.querySelectorAll('*').forEach(el => {
+      for (const a of [...el.attributes]) {
+        const n = a.name.toLowerCase();
+        if (n.startsWith('on') || n === 'style' || n === 'color' || n === 'bgcolor' || n === 'face' || n === 'width' && el.localName === 'table') el.removeAttribute(a.name);
+      }
+      if (el.id) el.id = 'c' + i + '_' + el.id;
+      if (el.localName === 'a') {
+        const h = el.getAttribute('href');
+        if (!h) return;
+        if (/^(https?:|mailto:)/i.test(h)) { el.target = '_blank'; el.rel = 'noopener'; return; }
+        const full = resolve(c.path, h); const [p, fragId] = full.split('#');
+        const ti = (p === '' || p === c.path) ? i : index[p];
+        if (ti == null) { el.removeAttribute('href'); return; }
+        el.dataset.goto = fragId ? 'c' + ti + '_' + fragId : 'ch-' + ti;
+        el.setAttribute('href', '#');
+      }
+    });
+    while (body.firstChild) sec.appendChild(body.firstChild);
+    frag.appendChild(sec);
+  });
+  book.replaceChildren(frag);
+}
+
+/* ---------- primer knjige ---------- */
+const SAMPLE = {
+  id: '__primer', title: 'Kako radi Čitaonica', author: 'Probni tekst', lang: 'sr',
+  toc: [
+    { label: 'Čitanje bez listanja', href: 's0', depth: 0 },
+    { label: 'Boje za noć', href: 's1', depth: 0 },
+    { label: 'Šta stiže sledeće', href: 's2', depth: 0 }
+  ],
+  html: [
+`<h1>Čitanje bez listanja</h1>
+<p>Ovo je probni tekst, tu je samo da imaš na čemu da isprobaš čitač pre nego što ubaciš svoju knjigu. Kada dodaš EPUB, on se otvara na isti način: jedna duga kolona, od prve do poslednje rečenice, bez okretanja strana.</p>
+<p>Skroluj prstom ili točkićem miša kao da čitaš članak na internetu. Nema stranica koje se lome usred rečenice, nema čekanja na animaciju listanja. Poglavlja se nadovezuju jedno na drugo, a između njih stoji samo tanka linija.</p>
+<p>Dok čitaš, gornja i donja traka se same sklone da ništa ne bi stajalo između tebe i teksta. Kada ti zatrebaju, dodirni tekst jednom i vratiće se. Gore levo je biblioteka sa tvojim knjigama, desno sadržaj i dugme <b>Aa</b> za prikaz.</p>
+<p>Donja traka pokazuje naziv poglavlja i koliko si knjige pročitao. Čitač pamti tačno mesto na kom si stao, i to po poglavlju, a ne po broju piksela. Zato se pozicija ne gubi ni kada promeniš veličinu slova ili font.</p>
+<p>Na računaru radi i tastatura: razmaknica i <i>Page Down</i> spuštaju tekst za jedan ekran, <i>Shift</i> + razmaknica ga vraćaju. Na telefonu je dovoljan palac.</p>
+<p>Kad zatvoriš browser i vratiš se sutra, Čitaonica otvara poslednju knjigu na mestu gde si stao. Knjige koje dodaš ostaju u biblioteci na ovom uređaju sve dok ih sam ne ukloniš.</p>`,
+`<h1>Boje za noć</h1>
+<p>Otvori podešavanja preko dugmeta <b>Aa</b>. Prvi red su gotove teme: <i>Noć</i> je topla siva na skoro crnoj pozadini, <i>Crna</i> je potpuno crna pozadina koja na OLED ekranima praktično gasi piksele, a <i>Jantar</i> daje žućkasta slova koja manje umaraju oči u mraku.<sup><a href="#n1" id="r1">1</a></sup></p>
+<p>Ako ti nijedna ne odgovara, ispod tema su dva polja za boje. Jedno je za pozadinu, drugo za slova, i možeš da izabereš bilo koju kombinaciju. Promena se vidi odmah, dok je panel otvoren, pa lako uporediš nijanse.</p>
+<p>Klizač za zatamnjenje spušta svetlinu celog ekrana ispod onoga što telefon inače dozvoljava. Koristan je kada čitaš u krevetu i ne želiš da probudiš nekog pored sebe.</p>
+<p>Veličina slova, prored i margine podešavaju se nezavisno. Širina kolone ima smisla na velikom monitoru, gde predugački redovi otežavaju čitanje. Na telefonu tekst ionako zauzima ceo ekran.</p>
+<p>Svi fontovi imaju i latinicu i ćirilicu, sa kvačicama na pravom mestu: č, ć, ž, š, đ.</p>
+<p>Ћирилица изгледа исто тако уредно. Ако су ти књиге на ћирилици, нема никаквог додатног подешавања: отвориш фајл и читаш.</p>
+<p class="note" id="n1"><a href="#r1">1.</a> Nijedna boja nije „najbolja” za sve. Probaj par večeri i zadrži onu uz koju zaboraviš da gledaš u ekran.</p>`,
+`<h1>Šta stiže sledeće</h1>
+<p>Ovo je prva faza: čitač koji radi sa fajlovima koje sam dodaš. Sledeći korak je povezivanje sa Google Drive-om, posle čega aplikacija sama pronalazi EPUB fajlove u folderu koji izabereš.</p>
+<p>Posle toga sledi objava na besplatnom hostingu i instalacija na telefon, gde se Čitaonica pojavljuje kao ikonica na početnom ekranu i otvara se preko celog ekrana.</p>
+<p>Poslednji deo je sinhronizacija. Pročitaš deo poglavlja u autobusu, uveče otvoriš računar i nastaviš od iste rečenice. Pozicija će se čuvati na tvom Drive-u, pa nije potreban nikakav server.</p>
+<p>Za sada isprobaj podešavanja, ubaci neku svoju knjigu i zapiši šta ti smeta ili šta ti fali. To je najkorisnija stvar za sledeći krug.</p>`
+  ]
+};
+
+/* ---------- otvaranje knjige ---------- */
+let current = null; // {id,title,toc,chapterTitles}
+
+function setLoading(msg) { const l = $('#loading'); if (msg) { l.textContent = msg; l.hidden = false; } else l.hidden = true; }
+
+function chapterTitles(toc) {
+  const t = [];
+  [...book.children].forEach((sec, i) => {
+    const hit = toc.find(e => e.target && (e.target === sec.id || e.target.startsWith('c' + i + '_')));
+    const h = sec.querySelector('h1,h2,h3');
+    t[i] = hit ? hit.label : (h ? h.textContent.replace(/\s+/g, ' ').trim() : '');
+  });
+  for (let i = 1; i < t.length; i++) if (!t[i]) t[i] = t[i - 1];
+  return t;
+}
+
+async function finishOpen(id, title, author, lang, toc) {
+  book.lang = lang;
+  current = { id, title, toc };
+  current.titles = chapterTitles(toc);
+  // "strana" = oko 1600 znakova teksta, kao strana štampane knjige; ne menja se sa veličinom slova ni uređajem
+  current.pages = [...book.children].map(sec => Math.max(1, Math.ceil(sec.textContent.replace(/\s+/g, ' ').trim().length / CHARS_PER_PAGE)));
+  current.before = []; current.pages.reduce((acc, n, i) => (current.before[i] = acc, acc + n), 0);
+  current.total = current.pages.reduce((a, b) => a + b, 0);
+  $('#bookTitle').textContent = title;
+  document.title = title + ' · Čitaonica';
+  buildToc();
+  ls.set('last', id);
+  closeLibrary();
+  try { await document.fonts.ready; } catch (e) {}
+  const pos = ls.get('pos:' + id, null);
+  if (pos) restorePos(pos); else window.scrollTo(0, 0);
+  updateProgress();
+  showUI();
+  wake();
+}
+
+function openSample() {
+  renderChapters([]);
+  book.replaceChildren(...SAMPLE.html.map((h, i) => {
+    const s = document.createElement('section'); s.className = 'chapter'; s.id = 'ch-' + i; s.dataset.i = i; s.innerHTML = h;
+    s.querySelectorAll('[id]').forEach(el => el.id = 'c' + i + '_' + el.id);
+    s.querySelectorAll('a[href^="#"]').forEach(a => { a.dataset.goto = 'c' + i + '_' + a.getAttribute('href').slice(1); });
+    return s;
+  }));
+  const toc = SAMPLE.toc.map((e, i) => ({ label: e.label, depth: 0, target: 'ch-' + i }));
+  return finishOpen(SAMPLE.id, SAMPLE.title, SAMPLE.author, 'sr', toc);
+}
+
+async function openBuffer(id, buf) {
+  setLoading('Učitavam knjigu…');
+  try {
+    const b = await parseEpub(buf);
+    renderChapters(b.chapters);
+    const idx = {}; b.chapters.forEach((c, i) => idx[c.path] = i);
+    const toc = b.toc.map(e => {
+      const [p, f] = e.href.split('#'); const i = idx[p];
+      return i == null ? null : { label: e.label, depth: e.depth, target: f && document.getElementById('c' + i + '_' + f) ? 'c' + i + '_' + f : 'ch-' + i };
+    }).filter(Boolean);
+    await finishOpen(id, b.title, b.author, b.lang, toc);
+    return b;
+  } finally { setLoading(null); }
+}
+
+async function openStored(id) {
+  if (id === SAMPLE.id) return openSample();
+  const buf = await dbGetFile(id);
+  if (!buf) throw new Error('Knjiga više nije sačuvana u ovom browseru.');
+  return openBuffer(id, buf);
+}
+
+async function importBuffer(buf, fallbackName, forcedId, extra) {
+  const zip = await JSZip.loadAsync(buf);
+  const cont = zip.file('META-INF/container.xml');
+  if (!cont) throw new Error('nije ispravan EPUB');
+  const cx = new DOMParser().parseFromString(await cont.async('text'), 'application/xml');
+  const opfPath = cx.getElementsByTagNameNS('*', 'rootfile')[0].getAttribute('full-path');
+  const opf = new DOMParser().parseFromString(await zip.file(opfPath).async('text'), 'application/xml');
+  const m = n => { const e = opf.getElementsByTagNameNS('*', n)[0]; return e ? e.textContent.trim() : ''; };
+  const title = m('title') || fallbackName.replace(/\.epub$/i, ''), author = m('creator');
+  const id = forcedId || 'b_' + (title + '|' + author + '|' + buf.byteLength).split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+  try { await dbSave(Object.assign({ id, title, author, size: buf.byteLength, added: Date.now() }, extra || {}), buf); }
+  catch (e) { toast('Knjiga se otvara, ali ne može da se sačuva u ovom browseru.'); }
+  return id;
+}
+
+async function addFiles(files) {
+  let lastId = null, lastBuf = null;
+  for (const f of files) {
+    if (!/\.epub$/i.test(f.name) && f.type !== 'application/epub+zip') { toast(`„${f.name}” nije EPUB fajl.`); continue; }
+    try {
+      setLoading('Dodajem ' + f.name + '…');
+      const buf = await f.arrayBuffer();
+      lastId = await importBuffer(buf, f.name); lastBuf = buf;
+    } catch (e) { toast(`„${f.name}” ne može da se otvori: ${e.message}`); }
+    finally { setLoading(null); }
+  }
+  if (lastId) {
+    try { await openBuffer(lastId, lastBuf); } catch (e) { toast(e.message, 5000); renderLibrary(); }
+  }
+}
+
+/* ---------- pozicija i napredak ---------- */
+const OFFSET = 64;
+const CHARS_PER_PAGE = 1600;
+function getPos() {
+  const y = window.scrollY + OFFSET;
+  const secs = book.children;
+  for (let k = 0; k < secs.length; k++) {
+    const s = secs[k], top = s.getBoundingClientRect().top + window.scrollY, h = s.offsetHeight || 1;
+    if (top + h > y || k === secs.length - 1) return { i: k, f: Math.max(0, Math.min(1, (y - top) / h)) };
+  }
+  return { i: 0, f: 0 };
+}
+function restorePos(p) {
+  const s = document.getElementById('ch-' + p.i); if (!s) return;
+  const top = s.getBoundingClientRect().top + window.scrollY;
+  window.scrollTo(0, Math.max(0, top + p.f * s.offsetHeight - OFFSET));
+}
+function pct() { const max = document.documentElement.scrollHeight - innerHeight; return max > 0 ? Math.min(100, Math.max(0, window.scrollY / max * 100)) : 0; }
+function updateProgress() {
+  if (!current) return;
+  const p = pct(), pos = getPos();
+  $('#prog').style.width = p.toFixed(1) + '%';
+  $('#pct').textContent = Math.round(p) + '%';
+  $('#chap').textContent = current.titles[pos.i] || '';
+  const n = current.pages[pos.i] || 1, cur = Math.min(n, Math.floor(pos.f * n) + 1);
+  $('#chPage').textContent = `str. ${cur} od ${n}`;
+  $('#bkPage').textContent = `Knjiga: str. ${current.before[pos.i] + cur} od ${current.total}`;
+  return { pos, p };
+}
+let saveT = 0, lastY = window.scrollY, ticking = false;
+addEventListener('scroll', () => {
+  if (ticking) return; ticking = true;
+  requestAnimationFrame(() => {
+    ticking = false;
+    const r = updateProgress();
+    const dy = window.scrollY - lastY; lastY = window.scrollY;
+    if (dy > 6 && window.scrollY > 80 && $('#settings').hidden && $('#toc').hidden) hideUI();
+    if (r && current) { clearTimeout(saveT); saveT = setTimeout(() => ls.set('pos:' + current.id, Object.assign({}, r.pos, { pct: Math.round(r.p) })), 300); }
+  });
+}, { passive: true });
+addEventListener('resize', () => { if (current) { const p = ls.get('pos:' + current.id, null); if (p) restorePos(p); } });
+
+/* ---------- interfejs ---------- */
+function hideUI() { document.body.classList.add('immersive'); }
+function showUI() { document.body.classList.remove('immersive'); }
+function openSheet(id) {
+  closeSheets();
+  $(id).hidden = false; showUI();
+  if (id === '#toc') { $('#scrim').hidden = false; const c = $('#tocList .cur'); if (c) c.scrollIntoView({ block: 'center' }); }
+}
+function closeSheets() { $('#settings').hidden = true; $('#toc').hidden = true; $('#scrim').hidden = true; }
+function anySheet() { return !$('#settings').hidden || !$('#toc').hidden; }
+
+function buildToc() {
+  const list = $('#tocList');
+  if (!current.toc.length) { list.innerHTML = '<li style="padding:10px 8px;color:var(--muted);font-size:14px">Ova knjiga nema sadržaj.</li>'; return; }
+  list.innerHTML = current.toc.map((e, k) => `<li><button class="d${Math.min(e.depth, 2)}" data-k="${k}">${esc(e.label || 'Bez naziva')}</button></li>`).join('');
+}
+function markTocCurrent() {
+  if (!current) return;
+  const y = window.scrollY + OFFSET + 1; let cur = -1;
+  current.toc.forEach((e, k) => { const el = document.getElementById(e.target); if (el && el.getBoundingClientRect().top + window.scrollY <= y) cur = k; });
+  $('#tocList').querySelectorAll('button').forEach(b => b.classList.toggle('cur', +b.dataset.k === cur));
+}
+function goTo(id) {
+  const el = document.getElementById(id); if (!el) return;
+  window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - OFFSET);
+  if (!el.classList.contains('chapter')) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+}
+
+$('#btnSet').addEventListener('click', () => $('#settings').hidden ? openSheet('#settings') : closeSheets());
+$('#btnToc').addEventListener('click', () => { markTocCurrent(); $('#toc').hidden ? openSheet('#toc') : closeSheets(); });
+$('#btnLib').addEventListener('click', openLibrary);
+$('#scrim').addEventListener('click', closeSheets);
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
+$('#tocList').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  closeSheets(); goTo(current.toc[+b.dataset.k].target); hideUI();
+});
+book.addEventListener('click', e => {
+  const a = e.target.closest('a');
+  if (a && a.dataset.goto) { e.preventDefault(); goTo(a.dataset.goto); return; }
+  if (a && a.target === '_blank') return;
+  if (a) e.preventDefault();
+  if (anySheet()) { closeSheets(); return; }
+  const sel = window.getSelection(); if (sel && String(sel).length) return;
+  document.body.classList.toggle('immersive');
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (anySheet()) closeSheets(); else if (!$('#library').hidden && current) closeLibrary(); }
+});
+
+/* ---------- biblioteka ---------- */
+async function renderLibrary() {
+  const metas = (await dbAllMeta()).sort((a, b) => (ls.get('opened:' + b.id, b.added)) - (ls.get('opened:' + a.id, a.added)));
+  const rows = [...metas, { id: SAMPLE.id, title: SAMPLE.title, author: SAMPLE.author }];
+  $('#books').innerHTML = rows.map(m => {
+    const p = (ls.get('pos:' + m.id, null) || {}).pct || 0;
+    const ini = esc((m.title || '?').trim().charAt(0).toUpperCase());
+    return `<li class="book" data-id="${esc(m.id)}">
+      <div class="spine" aria-hidden="true">${ini}</div>
+      <button class="open"><span class="t">${esc(m.title)}</span><span class="a">${esc(m.author || 'Nepoznat autor')}</span>
+        <span class="p"><span class="track"><i style="width:${p}%"></i></span>${p}%</span></button>
+      ${m.id === SAMPLE.id ? '' : '<button class="rm">Ukloni</button>'}
+    </li>`;
+  }).join('');
+  renderDrive(metas);
+}
+function openLibrary() {
+  if (ls.get('gconnected', false) && !driveFiles && tokenOk()) refreshDrive();
+  if (current) { const r = updateProgress(); if (r) ls.set('pos:' + current.id, Object.assign({}, r.pos, { pct: Math.round(r.p) })); }
+  closeSheets(); renderLibrary(); $('#library').hidden = false;
+}
+function closeLibrary() { $('#library').hidden = true; }
+$('#books').addEventListener('click', async e => {
+  const li = e.target.closest('.book'); if (!li) return; const id = li.dataset.id;
+  const rm = e.target.closest('.rm');
+  if (rm) {
+    if (!rm.classList.contains('armed')) { rm.classList.add('armed'); rm.textContent = 'Sigurno?'; setTimeout(() => { rm.classList.remove('armed'); rm.textContent = 'Ukloni'; }, 3000); return; }
+    try { await dbDelete(id); } catch (err) {}
+    try { localStorage.removeItem('pos:' + id); } catch (err) {}
+    if (current && current.id === id) { current = null; openSample().then(openLibrary); return; }
+    renderLibrary(); return;
+  }
+  if (e.target.closest('.open')) {
+    if (current && current.id === id) { closeLibrary(); return; }
+    ls.set('opened:' + id, Date.now());
+    try { await openStored(id); } catch (err) { toast(err.message, 5000); }
+  }
+});
+$('#file').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) addFiles(fs); });
+addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+addEventListener('drop', e => {
+  e.preventDefault(); document.body.classList.remove('dragging');
+  const fs = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (fs.length) addFiles(fs);
+});
+
+/* ---------- ekran ne gasi dok čitaš ---------- */
+let lock = null;
+async function wake() { try { if ('wakeLock' in navigator && !lock) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => lock = null); } } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current) wake(); });
+
+
+/* ---------- Google Drive ---------- */
+const CLIENT_ID = String(window.CITAONICA_CLIENT_ID || '').trim();
+const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
+let gToken = ls.get('gtoken', null), gisP = null, driveFiles = null;
+const driveMsg = t => { $('#driveMsg').textContent = t || ''; };
+function loadGis() {
+  if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+  if (gisP) return gisP;
+  gisP = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+    sc.onload = () => res(); sc.onerror = () => { gisP = null; rej(new Error('Google prijava nije mogla da se učita. Proveri internet vezu.')); };
+    document.head.appendChild(sc);
+  });
+  return gisP;
+}
+const tokenOk = () => gToken && gToken.exp > Date.now() + 60000;
+function requestToken() {
+  return new Promise((res, rej) => {
+    const tc = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID, scope: SCOPES,
+      callback: r => {
+        if (r.error) { rej(new Error(r.error_description || r.error)); return; }
+        gToken = { access_token: r.access_token, exp: Date.now() + (r.expires_in - 30) * 1000 };
+        ls.set('gtoken', gToken); ls.set('gconnected', true); res(gToken.access_token);
+      },
+      error_callback: e => rej(new Error(e && e.type === 'popup_closed' ? 'Prijava je prekinuta.' : e && e.type === 'popup_failed_to_open' ? 'Browser je blokirao prozor za prijavu. Dozvoli iskačuće prozore za ovu stranicu.' : 'Prijava nije uspela.'))
+    });
+    tc.requestAccessToken({ prompt: ls.get('gconnected', false) ? '' : 'consent' });
+  });
+}
+async function getToken() {
+  if (tokenOk()) return gToken.access_token;
+  if (!CLIENT_ID) throw new Error('U fajlu config.js još nije upisan Google Client ID.');
+  await loadGis();
+  return requestToken();
+}
+async function driveFetch(url) {
+  const t = await getToken();
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + t } });
+  if (r.status === 401) { gToken = null; ls.set('gtoken', null); throw new Error('Prijava je istekla. Klikni „Osveži”.'); }
+  if (!r.ok) throw new Error('Drive je vratio grešku ' + r.status + '.');
+  return r;
+}
+async function listDrive() {
+  const q = encodeURIComponent("(mimeType='application/epub+zip' or name contains '.epub') and trashed=false");
+  const out = []; let pt = '';
+  do {
+    const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,size,modifiedTime)&pageSize=200&orderBy=name_natural${pt ? '&pageToken=' + pt : ''}`);
+    const j = await r.json(); out.push(...(j.files || [])); pt = j.nextPageToken || '';
+  } while (pt);
+  return out;
+}
+async function downloadDrive(f) {
+  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(f.id)}?alt=media`);
+  const total = +f.size || +r.headers.get('content-length') || 0;
+  if (!r.body || !total) return r.arrayBuffer();
+  const rd = r.body.getReader(); const parts = []; let got = 0;
+  for (;;) {
+    const { done, value } = await rd.read(); if (done) break;
+    parts.push(value); got += value.length;
+    setLoading(`Preuzimam sa Drive-a… ${Math.min(100, Math.round(got / total * 100))}%`);
+  }
+  const buf = new Uint8Array(got); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
+  return buf.buffer;
+}
+function syncDriveButtons() {
+  const on = ls.get('gconnected', false);
+  $('#driveBtn').textContent = on ? 'Osveži' : 'Poveži';
+  $('#driveOut').hidden = !on;
+}
+async function renderDrive(local) {
+  syncDriveButtons();
+  if (!driveFiles) return;
+  const have = new Set((local || await dbAllMeta()).map(m => m.id));
+  if (!driveFiles.length) { $('#driveList').innerHTML = ''; driveMsg('Na Drive-u nema EPUB fajlova. Ubaci ih bilo gde na Drive i klikni „Osveži”.'); return; }
+  driveMsg(driveFiles.length === 1 ? '1 knjiga na Drive-u' : driveFiles.length + ' knjiga na Drive-u');
+  $('#driveList').innerHTML = driveFiles.map(f => {
+    const name = f.name.replace(/\.epub$/i, ''), on = have.has('g_' + f.id);
+    const mb = f.size ? (f.size / 1048576).toFixed(1).replace('.', ',') + ' MB' : '';
+    return `<li class="book" data-gid="${esc(f.id)}">
+      <div class="spine" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</div>
+      <button class="open"><span class="t">${esc(name)}</span><span class="a">${on ? 'Na uređaju' : 'Preuzima se kad je otvoriš'}${mb ? ' · ' + mb : ''}</span></button>
+    </li>`;
+  }).join('');
+}
+async function refreshDrive() {
+  driveMsg('Tražim EPUB fajlove na Drive-u…');
+  try { driveFiles = await listDrive(); await renderDrive(); }
+  catch (e) { driveMsg(e.message); syncDriveButtons(); }
+}
+$('#driveBtn').addEventListener('click', async () => {
+  if (!CLIENT_ID) { driveMsg('U fajlu config.js još nije upisan Google Client ID.'); return; }
+  try { await loadGis(); if (!tokenOk()) await requestToken(); } catch (e) { driveMsg(e.message); return; }
+  refreshDrive();
+});
+$('#driveOut').addEventListener('click', () => {
+  try { if (gToken && window.google && google.accounts) google.accounts.oauth2.revoke(gToken.access_token, () => {}); } catch (e) {}
+  gToken = null; driveFiles = null; ls.set('gtoken', null); ls.set('gconnected', false);
+  $('#driveList').innerHTML = ''; driveMsg('Odjavljen si. Knjige koje si već preuzeo ostaju na uređaju.'); syncDriveButtons();
+});
+$('#driveList').addEventListener('click', async e => {
+  const li = e.target.closest('.book'); if (!li || !e.target.closest('.open')) return;
+  const f = driveFiles.find(x => x.id === li.dataset.gid); if (!f) return;
+  const id = 'g_' + f.id;
+  ls.set('opened:' + id, Date.now());
+  try {
+    const cached = await dbGetFile(id).catch(() => null);
+    if (cached) { await openBuffer(id, cached); return; }
+    setLoading('Preuzimam sa Drive-a…');
+    const buf = await downloadDrive(f);
+    await importBuffer(buf, f.name, id, { driveId: f.id, modified: f.modifiedTime });
+    await openBuffer(id, buf);
+  } catch (err) { setLoading(null); toast(err.message, 5000); }
+});
+if (CLIENT_ID) loadGis().catch(() => {});
+
+/* ---------- start ---------- */
+buildControls();
+applySettings(false);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+(async () => {
+  const last = ls.get('last', null);
+  if (last && last !== SAMPLE.id) {
+    try { await openStored(last); return; } catch (e) { /* pada na primer */ }
+  }
+  await openSample();
+})();
+})();
+</script>
+
+</body>
+</html>
