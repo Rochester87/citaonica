@@ -226,6 +226,10 @@ body.dragging .drop{border-color:var(--fg);color:var(--fg)}
       <button data-align="left">Levo</button><button data-align="justify">Obostrano</button>
     </div>
   </div>
+  <div class="group" id="fsGroup">
+    <div class="label">Ceo ekran</div>
+    <div class="seg"><button id="fsBtn" aria-pressed="false">Sakrij trake telefona</button></div>
+  </div>
   <div class="group">
     <label class="label" for="sDim">Zatamnjenje ekrana <output id="oDim"></output></label>
     <input type="range" id="sDim" min="0" max="70" step="5">
@@ -366,6 +370,23 @@ function buildControls() {
   $('#fonts').innerHTML = Object.entries(FONTS).map(([k, f]) => `<button data-font="${k}" style="font-family:${f.css.replace(/"/g, '&quot;')}">${f.name}</button>`).join('');
   $('#fonts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.font = b.dataset.font; applySettings(true); } });
   $('#aligns').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { S.align = b.dataset.align; applySettings(true); } });
+  // ceo ekran: sakriva statusnu i navigacionu traku Androida (u instaliranoj aplikaciji to radi manifest)
+  const fsEl = document.documentElement;
+  const canFs = !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen);
+  const standaloneFs = matchMedia('(display-mode: fullscreen)').matches;
+  if (!canFs || standaloneFs) $('#fsGroup').hidden = true;
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const syncFs = () => { $('#fsBtn').setAttribute('aria-pressed', isFs()); $('#fsBtn').textContent = isFs() ? 'Prikaži trake telefona' : 'Sakrij trake telefona'; };
+  document.addEventListener('fullscreenchange', syncFs); document.addEventListener('webkitfullscreenchange', syncFs);
+  $('#fsBtn').addEventListener('click', async () => {
+    try {
+      if (isFs()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else { await (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' }); ls.set('wantFs', true); }
+      if (!isFs()) ls.set('wantFs', false);
+    } catch (e) { toast('Ovaj browser ne dozvoljava ceo ekran.'); }
+  });
+  // browser traži dodir pre celog ekrana: ako je bio uključen, vrati ga na prvi dodir teksta
+  book.addEventListener('click', () => { if (ls.get('wantFs', false) && !isFs() && canFs && !standaloneFs) (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' }).catch(() => {}); }, true);
   $('#reset').addEventListener('click', () => { S = Object.assign({}, DEF); applySettings(true); });
 }
 

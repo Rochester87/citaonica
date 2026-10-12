@@ -1,5 +1,5 @@
 // Čuva aplikaciju za rad bez interneta. Za novu verziju dovoljno je postaviti nove fajlove.
-const CACHE = 'citaonica-v1';
+const CACHE = 'citaonica-v2';
 const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest', './icon-192.png'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
