@@ -105,6 +105,17 @@ input[type=range]{width:100%;accent-color:var(--fg);height:28px}
 #tocList button.cur{font-weight:600}
 #tocList .d1{padding-left:24px;font-size:14px;color:var(--muted)}
 #tocList .d2{padding-left:40px;font-size:13.5px;color:var(--muted)}
+#btnSync[hidden]{display:none}
+#btnSync .busy{display:none}
+#btnSync[data-state=busy] .busy{display:block;animation:spin 1s linear infinite;transform-origin:12px 12px}
+#btnSync[data-state=busy] .cloud{opacity:.45}
+#btnSync .slash{display:none}
+#btnSync[data-state=paused] .slash,#btnSync[data-state=error] .slash{display:block}
+#btnSync[data-state=paused],#btnSync[data-state=error]{color:var(--muted)}
+@keyframes spin{to{transform:rotate(360deg)}}
+#syncBar{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);z-index:25;display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 32px);padding:8px 8px 8px 14px;border-radius:12px;background:var(--panel);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.25);font-size:13.5px}
+#syncBar span{min-width:0}
+#syncBar .ghost{flex:none}
 .scrim{position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.25)}
 #dimmer{position:fixed;inset:0;z-index:100;background:#000;opacity:var(--dim);pointer-events:none}
 
@@ -154,6 +165,9 @@ body.dragging .drop{border-color:var(--fg);color:var(--fg)}
       <svg viewBox="0 0 24 24"><path d="M4 19V5M9 19V5M14 19l-1-14M18.5 19l-3-13.5"/></svg><span class="lbl-hide">Biblioteka</span>
     </button>
     <div class="title" id="bookTitle"></div>
+    <button class="icon" id="btnSync" hidden aria-label="Sinhronizacija" title="Sinhronizacija">
+      <svg viewBox="0 0 24 24"><path class="cloud" d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.2 4.5 4.5 0 0 0 7 18z"/><path class="busy" d="M12 7a5 5 0 0 1 5 5"/><path class="slash" d="M4 4l16 16"/></svg>
+    </button>
     <button class="icon" id="btnToc" aria-label="Sadržaj">
       <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
     </button>
@@ -248,6 +262,7 @@ body.dragging .drop{border-color:var(--fg);color:var(--fg)}
 </section>
 
 <div id="loading" hidden>Učitavam knjigu…</div>
+<div id="syncBar" hidden><span id="syncText">Sinhronizacija je pauzirana.</span><button class="ghost primary" id="syncGo">Nastavi</button><button class="ghost" id="syncX" aria-label="Zatvori">✕</button></div>
 <div id="toast" hidden></div>
 <div id="dimmer"></div>
 
@@ -537,6 +552,7 @@ async function finishOpen(id, title, author, lang, toc) {
   updateProgress();
   showUI();
   wake();
+  if (ls.get('gconnected', false)) { if (tokenOk()) syncNow(false); else offerResume(); }
 }
 
 function openSample() {
@@ -616,8 +632,10 @@ function getPos() {
   }
   return { i: 0, f: 0 };
 }
+let quietUntil = 0;
 function restorePos(p) {
   const s = document.getElementById('ch-' + p.i); if (!s) return;
+  quietUntil = Date.now() + 800;
   const top = s.getBoundingClientRect().top + window.scrollY;
   window.scrollTo(0, Math.max(0, top + p.f * s.offsetHeight - OFFSET));
 }
@@ -633,6 +651,15 @@ function updateProgress() {
   $('#bkPage').textContent = `Knjiga: str. ${current.before[pos.i] + cur} od ${current.total}`;
   return { pos, p };
 }
+// pamti poziciju; vreme (ts) se menja samo kad se čitalac stvarno pomerio, ne kad aplikacija sama vrati poziciju
+function savePos(r) {
+  if (!current) return;
+  const key = 'pos:' + current.id, prev = ls.get(key, null);
+  const moved = !prev || prev.i !== r.pos.i || Math.abs(prev.f - r.pos.f) > 0.002;
+  const ts = (moved && Date.now() > quietUntil) ? Date.now() : (prev && prev.ts) || 0;
+  ls.set(key, { i: r.pos.i, f: r.pos.f, pct: Math.round(r.p), ts });
+  if (ts && (!prev || ts !== prev.ts)) schedulePush();
+}
 let saveT = 0, lastY = window.scrollY, ticking = false;
 addEventListener('scroll', () => {
   if (ticking) return; ticking = true;
@@ -641,7 +668,7 @@ addEventListener('scroll', () => {
     const r = updateProgress();
     const dy = window.scrollY - lastY; lastY = window.scrollY;
     if (dy > 6 && window.scrollY > 80 && $('#settings').hidden && $('#toc').hidden) hideUI();
-    if (r && current) { clearTimeout(saveT); saveT = setTimeout(() => ls.set('pos:' + current.id, Object.assign({}, r.pos, { pct: Math.round(r.p) })), 300); }
+    if (r && current) { clearTimeout(saveT); saveT = setTimeout(() => savePos(r), 300); }
   });
 }, { passive: true });
 addEventListener('resize', () => { if (current) { const p = ls.get('pos:' + current.id, null); if (p) restorePos(p); } });
@@ -714,7 +741,7 @@ async function renderLibrary() {
 }
 function openLibrary() {
   if (ls.get('gconnected', false) && !driveFiles && tokenOk()) refreshDrive();
-  if (current) { const r = updateProgress(); if (r) ls.set('pos:' + current.id, Object.assign({}, r.pos, { pct: Math.round(r.p) })); }
+  if (current) { const r = updateProgress(); if (r) savePos(r); }
   closeSheets(); renderLibrary(); $('#library').hidden = false;
 }
 function closeLibrary() { $('#library').hidden = true; }
@@ -767,11 +794,14 @@ const tokenOk = () => gToken && gToken.exp > Date.now() + 60000;
 function requestToken() {
   return new Promise((res, rej) => {
     const tc = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID, scope: SCOPES,
+      client_id: CLIENT_ID, scope: SCOPES, login_hint: ls.get('gemail', '') || undefined,
       callback: r => {
         if (r.error) { rej(new Error(r.error_description || r.error)); return; }
         gToken = { access_token: r.access_token, exp: Date.now() + (r.expires_in - 30) * 1000 };
         ls.set('gtoken', gToken); ls.set('gconnected', true); res(gToken.access_token);
+        setSync('ok'); $('#syncBar').hidden = true;
+        if (!ls.get('gemail', '')) fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + r.access_token } }).then(x => x.json()).then(j => j.user && ls.set('gemail', j.user.emailAddress)).catch(() => {});
+        setTimeout(() => syncNow(true), 0);
       },
       error_callback: e => rej(new Error(e && e.type === 'popup_closed' ? 'Prijava je prekinuta.' : e && e.type === 'popup_failed_to_open' ? 'Browser je blokirao prozor za prijavu. Dozvoli iskačuće prozore za ovu stranicu.' : 'Prijava nije uspela.'))
     });
@@ -784,9 +814,11 @@ async function getToken() {
   await loadGis();
   return requestToken();
 }
-async function driveFetch(url) {
+async function driveFetch(url, opts, silent) {
+  if (silent && !tokenOk()) throw new Error('paused');
   const t = await getToken();
-  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + t } });
+  const o = Object.assign({}, opts || {}); o.headers = Object.assign({ Authorization: 'Bearer ' + t }, o.headers || {});
+  const r = await fetch(url, o);
   if (r.status === 401) { gToken = null; ls.set('gtoken', null); throw new Error('Prijava je istekla. Klikni „Osveži”.'); }
   if (!r.ok) throw new Error('Drive je vratio grešku ' + r.status + '.');
   return r;
@@ -845,7 +877,7 @@ $('#driveBtn').addEventListener('click', async () => {
 });
 $('#driveOut').addEventListener('click', () => {
   try { if (gToken && window.google && google.accounts) google.accounts.oauth2.revoke(gToken.access_token, () => {}); } catch (e) {}
-  gToken = null; driveFiles = null; ls.set('gtoken', null); ls.set('gconnected', false);
+  gToken = null; driveFiles = null; ls.set('gtoken', null); ls.set('gconnected', false); ls.set('gemail', ''); syncFileId = null; setSync(null); $('#syncBar').hidden = true;
   $('#driveList').innerHTML = ''; driveMsg('Odjavljen si. Knjige koje si već preuzeo ostaju na uređaju.'); syncDriveButtons();
 });
 $('#driveList').addEventListener('click', async e => {
@@ -863,6 +895,130 @@ $('#driveList').addEventListener('click', async e => {
   } catch (err) { setLoading(null); toast(err.message, 5000); }
 });
 if (CLIENT_ID) loadGis().catch(() => {});
+
+/* ---------- sinhronizacija (skrivena fascikla aplikacije na Drive-u) ---------- */
+const SYNC_NAME = 'citaonica-sync.json';
+let syncFileId = ls.get('syncFileId', null), remoteCache = null, pushT = 0, syncing = false;
+function setSync(state) {
+  const b = $('#btnSync');
+  if (!state) { b.hidden = true; return; }
+  b.hidden = false; b.dataset.state = state;
+  b.title = { ok: 'Sinhronizovano', busy: 'Sinhronizujem…', paused: 'Sinhronizacija pauzirana, dodirni da nastaviš', error: 'Sinhronizacija nije uspela, dodirni da probaš ponovo' }[state];
+}
+function localState() {
+  const books = {};
+  try {
+    for (let k = 0; k < localStorage.length; k++) {
+      const key = localStorage.key(k);
+      if (key && key.startsWith('pos:') && key !== 'pos:__primer') { const v = ls.get(key, null); if (v && v.ts) books[key.slice(4)] = v; }
+    }
+  } catch (e) {}
+  return { settings: S, settingsTs: ls.get('settingsTs', 0), books };
+}
+function mergeStates(a, b) {
+  const out = { v: 1, books: Object.assign({}, a.books || {}) };
+  for (const [id, v] of Object.entries(b.books || {})) if (!out.books[id] || (v.ts || 0) > (out.books[id].ts || 0)) out.books[id] = v;
+  const useB = (b.settingsTs || 0) > (a.settingsTs || 0);
+  out.settings = useB ? b.settings : a.settings; out.settingsTs = useB ? b.settingsTs : a.settingsTs;
+  return out;
+}
+async function findSyncFile() {
+  if (syncFileId) return syncFileId;
+  const q = encodeURIComponent(`name='${SYNC_NAME}'`);
+  const j = await (await driveFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id)`, null, true)).json();
+  syncFileId = j.files && j.files[0] ? j.files[0].id : null;
+  ls.set('syncFileId', syncFileId);
+  return syncFileId;
+}
+async function readRemote() {
+  const id = await findSyncFile();
+  if (!id) return { books: {} };
+  try { return await (await driveFetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, null, true)).json(); }
+  catch (e) { if (/404/.test(e.message)) { syncFileId = null; ls.set('syncFileId', null); return { books: {} }; } throw e; }
+}
+async function writeRemote(data, keepalive) {
+  const body = JSON.stringify(Object.assign({}, data, { updated: Date.now() }));
+  const id = syncFileId || (!keepalive && await findSyncFile());
+  if (id) {
+    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body, keepalive: !!keepalive }, true);
+    return;
+  }
+  if (keepalive) return;
+  const bd = 'citaonica' + Math.random().toString(36).slice(2);
+  const multipart = `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: SYNC_NAME, parents: ['appDataFolder'] })}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${bd}--`;
+  const j = await (await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + bd }, body: multipart }, true)).json();
+  syncFileId = j.id; ls.set('syncFileId', syncFileId);
+}
+// povuci sa Drive-a, primeni noviji deo kod sebe, pa pošalji spojeno stanje nazad
+async function syncNow(fromUser) {
+  if (!ls.get('gconnected', false)) return;
+  if (!tokenOk()) { setSync('paused'); return; }
+  if (syncing) return; syncing = true; setSync('busy');
+  try {
+    const remote = await readRemote();
+    remoteCache = remote;
+    const local = localState();
+    // podešavanja
+    if ((remote.settingsTs || 0) > (local.settingsTs || 0) && remote.settings) {
+      S = Object.assign({}, DEF, remote.settings); if (!FONTS[S.font]) S.font = DEF.font;
+      applySettings(true); ls.set('settingsTs', remote.settingsTs);
+    }
+    // pozicije
+    let jumped = false;
+    for (const [id, v] of Object.entries(remote.books || {})) {
+      const lv = ls.get('pos:' + id, null);
+      if (!lv || (v.ts || 0) > (lv.ts || 0)) {
+        ls.set('pos:' + id, v);
+        if (current && current.id === id && (!lv || lv.i !== v.i || Math.abs(lv.f - v.f) > 0.002)) { restorePos(v); updateProgress(); jumped = true; }
+      }
+    }
+    if (jumped) toast('Nastavljaš gde si stao na drugom uređaju.');
+    const merged = mergeStates(remote, localState());
+    if (JSON.stringify(merged.books) !== JSON.stringify(remote.books || {}) || merged.settingsTs !== remote.settingsTs) await writeRemote(merged);
+    remoteCache = merged;
+    if (!$('#library').hidden) renderLibrary();
+    setSync('ok');
+  } catch (e) {
+    if (e.message === 'paused' || /istekla/.test(e.message)) setSync('paused');
+    else { setSync('error'); if (fromUser) toast(/403/.test(e.message) ? 'Nema dozvole za čuvanje pozicije na Drive-u. Odjavi se i poveži ponovo, pa dozvoli sve tražene pristupe.' : 'Sinhronizacija nije uspela: ' + e.message, 5000); }
+  } finally { syncing = false; }
+}
+function schedulePush() {
+  if (!ls.get('gconnected', false)) return;
+  clearTimeout(pushT); pushT = setTimeout(() => syncNow(false), 5000);
+}
+// pri izlasku iz aplikacije: brzo upiši bez čekanja
+function pushOnLeave() {
+  clearTimeout(pushT);
+  if (!ls.get('gconnected', false) || !tokenOk() || !syncFileId) return;
+  if (current) { const r = updateProgress(); if (r) savePos(r); }
+  const merged = mergeStates(remoteCache || { books: {} }, localState());
+  remoteCache = merged;
+  writeRemote(merged, true).catch(() => {});
+}
+function offerResume() {
+  if (!ls.get('gconnected', false) || tokenOk() || !CLIENT_ID) return;
+  setSync('paused');
+  $('#syncText').textContent = 'Sinhronizacija je pauzirana.';
+  $('#syncBar').hidden = false;
+  clearTimeout(offerResume.t); offerResume.t = setTimeout(() => $('#syncBar').hidden = true, 12000);
+}
+async function resumeSync() {
+  $('#syncBar').hidden = true;
+  try { await loadGis(); await requestToken(); } catch (e) { setSync('paused'); toast(e.message, 4000); }
+}
+$('#btnSync').addEventListener('click', () => tokenOk() ? syncNow(true) : resumeSync());
+$('#syncGo').addEventListener('click', resumeSync);
+$('#syncX').addEventListener('click', () => $('#syncBar').hidden = true);
+$('#settings').addEventListener('input', () => { ls.set('settingsTs', Date.now()); schedulePush(); });
+$('#settings').addEventListener('click', e => { if (e.target.closest('.swatch,.seg button,.reset')) { ls.set('settingsTs', Date.now()); schedulePush(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') pushOnLeave();
+  else if (ls.get('gconnected', false)) { if (tokenOk()) syncNow(false); else offerResume(); }
+});
+addEventListener('pagehide', pushOnLeave);
+if (ls.get('gconnected', false)) setSync(tokenOk() ? 'ok' : 'paused');
+
 
 /* ---------- start ---------- */
 buildControls();
